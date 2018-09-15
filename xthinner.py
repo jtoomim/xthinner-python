@@ -1,5 +1,6 @@
 #!/usr/bin/env python
-import json, cStringIO, traceback, sys
+import json, cStringIO, traceback, sys, os, urllib2
+
 
 blockfilename = '000000000000000001c37467f0843dd9e09536c21938c5c20551191788a70541'
 mempoolfilenames = ['00000000000000000008658cdaba34569f00748085df3923cb5287e55a2fe27c', 
@@ -7,7 +8,16 @@ mempoolfilenames = ['00000000000000000008658cdaba34569f00748085df3923cb5287e55a2
                     '00000000000000000175b9186c4004b77ea9dc61976f4d7aed140d10919d0c05']
 debug = '--debug' in sys.argv or '-d' in sys.argv
 
+def maybedownload(fn):
+    if not os.path.exists(fn):
+        print "downloading block %s" % fn
+        response = urllib2.urlopen('http://toom.im/files/%s' % fn)
+        html = response.read()
+        with open(fn, 'w') as f:
+            f.write(html)
+
 def fetchtxsfromfile(fn):
+    maybedownload(fn)
     with open(fn, 'r') as f:
         raw = f.read()
     block = json.loads(raw)
@@ -202,11 +212,6 @@ if __name__ == '__main__':
         bitcoin-cli getblock somehash > someblock
         # edit the filenames into the  blockfilenames or mempoolfilenames variables in the code, then3
         python xthinner.py
-
-        If you don't have bitcoin-cli handy, feel free to try it on the four sample
-        GBT files in samplegbts/:
-
-        for i in `seq 1 4`; do python orderencode.py samplegbts/$i; done
         """
         sys.exit()
 
