@@ -136,6 +136,9 @@ def decode_xthinner(encoding, mempool, checksumpositions=[], checksumintervals=[
     pops = unmake_bitmap(encoding[0])
     pushes = unmake_bitmap(encoding[1])
     pushbytes = encoding[2]
+    popi = 0 # pop index
+    pushi = 0
+    pushbi = 0
     donechecksums = encoding[3]
     txcount = encoding[4]
     checksums = [0  for i in range(len(checksumpositions))]
@@ -149,18 +152,24 @@ def decode_xthinner(encoding, mempool, checksumpositions=[], checksumintervals=[
     for i in range(txcount):
         # 1. Pop bytes off the stack
         if stack: stack.pop()
-        pop = pops.pop(0)
+        pop = pops[popi]
+        popi += 1
         while pop:
             stack.pop()
-            pop = pops.pop(0)
+            pop = pops[popi]
+            popi += 1
         if debug: print "%s after pops" % (''.join([s.encode('hex') for s in stack]))
 
         # 2. Push bytes onto the stack
-        stack.append(pushbytes.pop(0))
-        push = pushes.pop(0)
+        stack.append(pushbytes[pushbi])
+        pushbi += 1
+        push = pushes[pushi]
+        pushi += 1
         while push:
-            stack.append(pushbytes.pop(0))
-            push = pushes.pop(0)
+            stack.append(pushbytes[pushbi])
+            pushbi += 1
+            push = pushes[pushi]
+            pushi += 1
         if debug: print "%s after pushes" % (''.join([s.encode('hex') for s in stack]))
         
 
@@ -181,7 +190,7 @@ def decode_xthinner(encoding, mempool, checksumpositions=[], checksumintervals=[
         if debug: print "Remaining: %i pops, %i pushes, %i pushbytes, %i checksum bytes" % (len(pops), len(pushes), len(pushbytes), sum(map(len, donechecksums)))
             
     mempool.pop() # get rid of OOB-prevention dummy tx
-    assert len(pushbytes) == 0
+    assert len(pushbytes) == pushbi
     if debug: print "Recovered %i of %i transactions in block" % (len(block) - len(rerequests), len(block))
     return block, rerequests
 
@@ -211,4 +220,3 @@ if __name__ == '__main__':
     decoded, rerequests = decode_xthinner(encoding, mempool)
     print "Does decoded match original block?\t", decoded == block
 
-    #for tx in block: print tx
