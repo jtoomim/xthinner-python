@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-import json, cStringIO, traceback, sys, os, urllib2
+import json, cStringIO, traceback, sys, os, urllib2, random
 
 
 blockfilename = '000000000000000001c37467f0843dd9e09536c21938c5c20551191788a70541'
@@ -124,7 +124,11 @@ def encode_xthinner(block, mempool, checksumpositions=[], checksumintervals=[]):
         # This page is intentionally left blank
 
         # 4. Calculate checksums
-        # FIXME: Not yet implemented
+        for i in range(len(checksumpositions)):
+            checksums[i] ^= ord(tx[checksumpositions[i]])
+            if blockposition % checksumintervals[i] == 0 or blockposition == len(block):
+                donechecksums[i].append(checksums[i])
+                checksums[i] = 0
 
         blockposition += 1
         mempoolposition += 1
@@ -138,10 +142,10 @@ def encode_xthinner(block, mempool, checksumpositions=[], checksumintervals=[]):
         print [s.encode('hex') for s in pushbytes]
         for s in [s.encode('hex') for s in block[:10]]:
             print s
-    print "Finished! %i pops, %i pushes, %i pushbytes, %i checksum bytes" % (len(pops), len(pushes), len(pushbytes), sum(map(len, donechecksums)))
-    return bitpops, bitpushes, pushbytes, donechecksums, len(block)
+    print "Encoding finished! %i pops, %i pushes, %i pushbytes, %i checksum bytes" % (len(pops), len(pushes), len(pushbytes), sum(map(len, donechecksums)))
+    return bitpops, bitpushes, pushbytes, donechecksums, len(block), checksumpositions, checksumintervals
 
-def decode_xthinner(encoding, mempool, checksumpositions=[], checksumintervals=[]):
+def decode_xthinner(encoding, mempool):
     print "Beginning decode"
     pops = unmake_bitmap(encoding[0])
     pushes = unmake_bitmap(encoding[1])
@@ -151,7 +155,11 @@ def decode_xthinner(encoding, mempool, checksumpositions=[], checksumintervals=[
     pushbi = 0
     donechecksums = encoding[3]
     txcount = encoding[4]
+    checksumpositions = encoding[5]
+    checksumintervals = encoding[6]
     checksums = [0  for i in range(len(checksumpositions))]
+    badchecksums = [[]  for i in range(len(checksumpositions))]
+    expectbadchecksums = [0 for i in range(len(checksumpositions))]
     block = []
     stack = []
     mempoolposition = 0
@@ -159,7 +167,7 @@ def decode_xthinner(encoding, mempool, checksumpositions=[], checksumintervals=[
     mempool.append(chr(255)*32) # OOB-protection dummy hash
 
 
-    for i in range(txcount):
+    for blockposition in range(txcount):
         # 1. Pop bytes off the stack
         if stack: stack.pop()
         pop = pops[popi]
@@ -194,11 +202,29 @@ def decode_xthinner(encoding, mempool, checksumpositions=[], checksumintervals=[
         else:
             block.append(mempool[mempoolposition])
             if debug: print "%s uniquely matches with %s (pos=%i)" % (''.join([s.encode('hex') for s in stack]), mempool[mempoolposition].encode('hex'), mempoolposition)
+            for i in range(len(checksumpositions)):
+                checksums[i] ^= ord(block[-1][checksumpositions[i]])
 
         # 4. Check checksums
-        # FIXME: Not yet implemented
+        for i in range(len(checksumpositions)):
+            if blockposition % checksumintervals[i] == 0:
+                if not donechecksums[i][blockposition//checksumintervals[i]] == checksums[i]:
+                    if debug: print "Checksum error at blockposition %i, checksumposition %i" % (blockposition, i)
+                    badchecksums[i].append(blockposition)
+                checksums[i] = 0
+
         if debug: print "Remaining: %i pops, %i pushes, %i pushbytes, %i checksum bytes" % (len(pops), len(pushes), len(pushbytes), sum(map(len, donechecksums)))
             
+
+
+    # 4. Check checksums
+    for i in range(len(checksumpositions)):
+        if blockposition % checksumintervals[i] == 0 or blockposition == txcount-1:
+            if not donechecksums[i][blockposition//checksumintervals[i]] == checksums[i]:
+                if debug: print "Checksum error at blockposition %i, checksumposition %i" % (blockposition, i)
+                badchecksums[i].append(blockposition)
+            checksums[i] = 0
+
     mempool.pop() # get rid of OOB-prevention dummy tx
     assert len(pushbytes) == pushbi
     if debug: print "Recovered %i of %i transactions in block" % (len(block) - len(rerequests), len(block))
@@ -220,8 +246,8 @@ if __name__ == '__main__':
     mempool = buildmempool(mempoolfilenames + [blockfilename])
     print "%i tx in block, %i tx in mempool (%2.0f%%)" % (len(block), len(mempool), 100.*len(block)/len(mempool))
     block.sort()
-    encoding = encode_xthinner(block, mempool)
-    print "Encoding is %i bytes total" % (sum(map(len, encoding[:4])) + 4)
+    encoding = encode_xthinner(block, mempool, [random.randint(6, 32) for i in range(4)], [8, 64, 256, 1024])
+    print "Encoding is %i bytes total" % (sum(map(len, encoding[:3] + tuple(encoding[3]) + encoding[6:])) + 4)
     decoded, rerequests = decode_xthinner(encoding, mempool)
     print "Does decoded match original block?\t", decoded == block
 
