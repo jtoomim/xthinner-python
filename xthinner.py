@@ -1,9 +1,9 @@
 #!/usr/bin/env python
-import json, cStringIO, traceback, sys, os, urllib2, random
+import json, cStringIO, traceback, sys, os, urllib2, random, time
 
 
 blockfilename = '000000000000000001c37467f0843dd9e09536c21938c5c20551191788a70541'
-mempoolfilenames = ['00000000000000000008658cdaba34569f00748085df3923cb5287e55a2fe27c', 
+mempoolfilenames = ['00000000000000000008658cdaba34569f00748085df3923cb5287e55a2fe27c',
                     '000000000000000000328e4b6f34904c9525e4815c1a32a9e55a3ec6b0e5afa6',
                     '00000000000000000175b9186c4004b77ea9dc61976f4d7aed140d10919d0c05']
 debug = '--debug' in sys.argv or '-d' in sys.argv
@@ -240,14 +240,28 @@ if __name__ == '__main__':
         python xthinner.py
         """
         sys.exit()
-
     block = fetchtxsfromfile(blockfilename)
     coinbase = block.pop(0)
     mempool = buildmempool(mempoolfilenames + [blockfilename])
     print "%i tx in block, %i tx in mempool (%2.0f%%)" % (len(block), len(mempool), 100.*len(block)/len(mempool))
+    presort = time.time()
     block.sort()
+    print "Sorting into LTOR took %1.6f seconds" % (time.time() - presort)
+
+    if debug:
+      print 'first 10 tx in block:'
+      for i in range(10):
+        print block[i].encode('hex')
+      print 'first 20 tx in mempool:'
+      for i in range(20):
+        print mempool[i].encode('hex')
+    start = time.time()
     encoding = encode_xthinner(block, mempool, [random.randint(6, 32) for i in range(4)], [8, 64, 256, 1024])
-    print "Encoding is %i bytes total" % (sum(map(len, encoding[:3] + tuple(encoding[3]) + encoding[6:])) + 4)
+    print "Encoding took %1.6f seconds" % (time.time() - start)
+    encodedsize = (sum(map(len, encoding[:3] + tuple(encoding[3]) + encoding[6:])) + 4)
+    print "Encoding is %i bytes total, or %2.5f bits per tx" % (encodedsize, 8.*encodedsize/len(block))
+    start2 = time.time()
     decoded, rerequests = decode_xthinner(encoding, mempool)
+    print "Decoding took %1.6f seconds" % (time.time() - start2)
     print "Does decoded match original block?\t", decoded == block
 
